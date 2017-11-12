@@ -3,6 +3,7 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
 #include <Adafruit_LIS3DH.h>
+#include <string.h>
 
 
 // Barometer pinout
@@ -19,6 +20,11 @@
 #define ACC_RANGE LIS3DH_RANGE_4_G
 
 #define LED 8
+#define BUTTON 9
+
+#define NUM_OBSERVATIONS 500
+
+#define FORMAT_OBS_LEN 500
 
 //accelerometer setup
 Adafruit_LIS3DH acc = Adafruit_LIS3DH(ACC_CS, ACC_MOSI, ACC_MISO, ACC_CLK);
@@ -37,8 +43,20 @@ typedef struct {
 
 float altitude_zero;
 //Observation storage
-Observation observation_log[500];
+Observation observation_log[NUM_OBSERVATIONS];
 size_t observation_idx;
+
+int formatObs(char* buf, Observation obs) {
+    snprintf(
+        buf, FORMAT_OBS_LEN, 
+        "%10f, %10f, %10f, %10f, %10f, %10f, %10f\n",
+        obs.ms, obs.altitude, obs.acceleration, obs.velocity,
+        obs.calculated_drag, obs.predicted_altitude, obs.airbrakes
+    );
+    // 7 floats each with 10 characters, a comma, a space, plus one newline
+    //should return the length of the string
+    return 83;
+}
 
 float getAcceleration() {
   //TODO kalman?
@@ -58,6 +76,9 @@ float getAltitude() {
 }
 
 void updateObservation() {
+  if(observation_idx >= NUM_OBSERVATIONS) {
+    return;
+  }
   observation_log[observation_idx].ms = millis();
   observation_log[observation_idx].altitude = getAltitude();
   observation_log[observation_idx].acceleration = getAcceleration();
@@ -76,6 +97,7 @@ void updateObservation() {
 void setup() {
   // set led on
   pinMode(LED, OUTPUT);
+  pinMode(BUTTON, INPUT);
   if (!acc.begin(0x18) || !bmp.begin()) {   // change this to 0x19 for alternative i2c address
     while (1) {
       digitalWrite(LED, HIGH);
@@ -90,6 +112,17 @@ void setup() {
 }
 
 void loop() {
-  long unsigned int time_ = millis();
-  delay(5);
+  if(digitalRead(BUTTON) == HIGH) {
+    Serial.begin(9600);
+    for(int i = 0; i < observation_idx; i++) {
+      char buf[FORMAT_OBS_LEN];
+      int len = formatObs(buf, observation_log[i]);
+      Serial.write(buf, len);
+    }
+  }
+  updateObservation();
+  digitalWrite(LED, HIGH);
+  delay(25);
+  digitalWrite(LED, LOW);
+  delay(75);
 }
